@@ -139,9 +139,26 @@ if [ "${ARROW_USE_MESON:-OFF}" = "OFF" ] && \
       CMAKE_PREFIX_PATH+="/lib/cmake/"
       ;;
   esac
+  runtime_path="${CMAKE_INSTALL_PREFIX:-${ARROW_HOME}}/bin"
   if [ -n "${VCPKG_ROOT}" ] && [ -n "${VCPKG_DEFAULT_TRIPLET}" ]; then
+    # In manifest mode, vcpkg installs packages into <build dir>/vcpkg_installed/
+    # instead of ${VCPKG_ROOT}/installed/.
+    vcpkg_installed_dir="${build_dir}/vcpkg_installed"
+    if [ ! -d "${vcpkg_installed_dir}" ]; then
+      vcpkg_installed_dir="${VCPKG_ROOT}/installed"
+    fi
+    vcpkg_prefix="${vcpkg_installed_dir}/${VCPKG_DEFAULT_TRIPLET}"
     # Search vcpkg before <prefix>/lib/cmake.
-    CMAKE_PREFIX_PATH="${VCPKG_ROOT}/installed/${VCPKG_DEFAULT_TRIPLET};${CMAKE_PREFIX_PATH}"
+    CMAKE_PREFIX_PATH="${vcpkg_prefix};${CMAKE_PREFIX_PATH}"
+    # Shared libraries from vcpkg are needed to run the example on Windows.
+    case "$(echo "${ARROW_BUILD_TYPE:-debug}" | tr '[:upper:]' '[:lower:]')" in
+      debug)
+        runtime_path="${vcpkg_prefix}/debug/bin:${runtime_path}"
+        ;;
+      *)
+        runtime_path="${vcpkg_prefix}/bin:${runtime_path}"
+        ;;
+    esac
   fi
   cmake \
     -S "${source_dir}/examples/minimal_build" \
@@ -151,12 +168,12 @@ if [ "${ARROW_USE_MESON:-OFF}" = "OFF" ] && \
   cmake --build "${build_dir}/examples/minimal_build"
   pushd "${source_dir}/examples/minimal_build"
   # PATH= is for Windows.
-  PATH="${CMAKE_INSTALL_PREFIX:-${ARROW_HOME}}/bin:${PATH}" \
+  PATH="${runtime_path}:${PATH}" \
     "${build_dir}/examples/minimal_build/arrow-example"
   # Test static linking with S3
   s3_example="${build_dir}/examples/minimal_build/arrow-example-s3-static"
   if [ -x "${s3_example}" ]; then
-    PATH="${CMAKE_INSTALL_PREFIX:-${ARROW_HOME}}/bin:${PATH}" \
+    PATH="${runtime_path}:${PATH}" \
       "${s3_example}"
   fi
   popd
